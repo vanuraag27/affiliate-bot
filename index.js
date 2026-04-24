@@ -1,44 +1,58 @@
 require("dotenv").config();
 
 const express = require("express");
-const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
+const TelegramBot = require("node-telegram-bot-api");
+const { getAmazonDeals } = require("./amazonService");
 
 const app = express();
 
-// ================= SERVER =================
+// ===== TEMP PRODUCT STORE =====
+let productStore = {};
 
+// ===== SERVER =====
+
+// Home route
 app.get("/", (req, res) => {
   res.send("Affiliate Bot Server Running 🚀");
 });
 
 // Track clicks
 app.get("/track/:id", (req, res) => {
-  const productId = req.params.id;
-  const userId = req.query.user;
+  try {
+    const productId = req.params.id;
+    const userId = req.query.user;
 
-  let clicks = [];
-  if (fs.existsSync("clicks.json")) {
-    clicks = JSON.parse(fs.readFileSync("clicks.json"));
+    let clicks = [];
+
+    if (fs.existsSync("clicks.json")) {
+      const data = fs.readFileSync("clicks.json", "utf-8");
+      clicks = data ? JSON.parse(data) : [];
+    }
+
+    clicks.push({
+      productId,
+      userId,
+      time: new Date()
+    });
+
+    fs.writeFileSync("clicks.json", JSON.stringify(clicks, null, 2));
+
+    const productLink = productStore[productId];
+
+    if (!productLink) {
+      return res.send("Invalid product link");
+    }
+
+    res.redirect(productLink);
+
+  } catch (error) {
+    console.error("Track Error:", error);
+    res.status(500).send("Error tracking click");
   }
-
-  clicks.push({
-    productId,
-    userId,
-    time: new Date()
-  });
-
-  fs.writeFileSync("clicks.json", JSON.stringify(clicks, null, 2));
-
-  const productLinks = {
-    101: "https://amzn.to/demo1",
-    102: "https://amzn.to/demo2"
-  };
-
-  res.redirect(productLinks[productId] || "https://amazon.in");
 });
 
-// API stats
+// Stats API
 app.get("/api/stats", (req, res) => {
   try {
     let clicks = [];
@@ -66,23 +80,31 @@ app.get("/api/stats", (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("Server running on port 3000"));
+// Start server
+app.listen(3000, () => {
+  console.log("Server running on port 3000");
+});
 
-// ================= BOT =================
+// ===== TELEGRAM BOT =====
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // Save user
 function saveUser(user) {
-  let users = [];
+  try {
+    let users = [];
 
-  if (fs.existsSync("users.json")) {
-    users = JSON.parse(fs.readFileSync("users.json"));
-  }
+    if (fs.existsSync("users.json")) {
+      const data = fs.readFileSync("users.json", "utf-8");
+      users = data ? JSON.parse(data) : [];
+    }
 
-  if (!users.find(u => u.id === user.id)) {
-    users.push(user);
-    fs.writeFileSync("users.json", JSON.stringify(users, null, 2));
+    if (!users.find(u => u.id === user.id)) {
+      users.push(user);
+      fs.writeFileSync("users.json", JSON.stringify(users, null, 2));
+    }
+  } catch (error) {
+    console.error("User Save Error:", error);
   }
 }
 
@@ -103,35 +125,37 @@ bot.onText(/\/start/, (msg) => {
   });
 });
 
-// Category click
-bot.on("callback_query", (query) => {
+// Handle category click
+bot.on("callback_query", async (query) => {
+  bot.answerCallbackQuery(query.id);
+
   const chatId = query.message.chat.id;
 
-  const products = [
-    {
-      id: 101,
-      name: "Samsung Galaxy M14",
-      price: "₹12,999",
-      image: "https://via.placeholder.com/300"
-    },
-    {
-      id: 102,
-      name: "Noise Smartwatch",
-      price: "₹1,499",
-      image: "https://via.placeholder.com/300"
+  try {
+    const products = await getAmazonDeals();
+
+    if (!products.length) {
+      return bot.sendMessage(chatId, "No deals found 😔");
     }
-  ];
 
-  products.forEach(p => {
-    const trackLink = `${process.env.BASE_URL}/track/${p.id}?user=${query.from.id}`;
+    products.forEach((p) => {
+      // Store link for tracking
+      productStore[p.id] = p.link;
 
-    bot.sendPhoto(chatId, p.image, {
-      caption: `🔥 ${p.name}\n💰 ${p.price}`,
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Buy Now 🛒", url: trackLink }]
-        ]
-      }
+      const trackLink = `${process.env.BASE_URL}/track/${p.id}?user=${query.from.id}`;
+
+      bot.sendPhoto(chatId, p.image, {
+        caption: `🔥 ${p.name}\n💰 ${p.price}`,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Buy Now 🛒", url: trackLink }]
+          ]
+        }
+      });
     });
-  });
+
+  } catch (error) {
+    console.error("Bot Error:", error);
+    bot.sendMessage(chatId, "Error loading deals 😔");
+  }
 });
