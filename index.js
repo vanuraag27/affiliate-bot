@@ -9,8 +9,8 @@ const cron = require("node-cron");
 const app = express();
 const PORT = 3000;
 
-const ADMIN_ID = 123456789; // 🔴 replace
-const CHANNEL_ID = -100XXXXXXXXXX; // 🔴 replace
+const ADMIN_ID = 1783057190; // 🔴 replace
+const CHANNEL_ID = -1003968191044; // 🔴 replace
 const BASE_URL = process.env.BASE_URL;
 
 // ===== BOT =====
