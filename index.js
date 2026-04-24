@@ -3,21 +3,21 @@ require("dotenv").config();
 const express = require("express");
 const fs = require("fs");
 const TelegramBot = require("node-telegram-bot-api");
-const { getAmazonDeals } = require("./amazonService");
 
 const app = express();
 
 // ===== CONFIG =====
 const ADMIN_ID = 1783057190; // 🔴 replace with your Telegram ID
+const PORT = 3000;
 
-// ===== TEMP STORE =====
+// ===== TEMP PRODUCT STORE =====
 let productStore = {};
 
 // ===== SERVER =====
 
 // Home
 app.get("/", (req, res) => {
-  res.send("Affiliate Bot Server Running 🚀");
+  res.send("Affiliate Bot Running 🚀");
 });
 
 // Track clicks
@@ -43,9 +43,7 @@ app.get("/track/:id", (req, res) => {
 
     const link = productStore[productId];
 
-    if (!link) {
-      return res.send("Invalid product");
-    }
+    if (!link) return res.send("Invalid product");
 
     res.redirect(link);
 
@@ -62,13 +60,11 @@ app.get("/api/stats", (req, res) => {
     let users = [];
 
     if (fs.existsSync("clicks.json")) {
-      const data = fs.readFileSync("clicks.json", "utf-8");
-      clicks = data ? JSON.parse(data) : [];
+      clicks = JSON.parse(fs.readFileSync("clicks.json"));
     }
 
     if (fs.existsSync("users.json")) {
-      const data = fs.readFileSync("users.json", "utf-8");
-      users = data ? JSON.parse(data) : [];
+      users = JSON.parse(fs.readFileSync("users.json"));
     }
 
     res.json({
@@ -78,27 +74,25 @@ app.get("/api/stats", (req, res) => {
     });
 
   } catch (err) {
-    console.error("Stats Error:", err);
     res.status(500).json({ error: "Error fetching stats" });
   }
 });
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 // ===== TELEGRAM BOT =====
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-// Save user
+// ===== SAVE USER =====
 function saveUser(user) {
   try {
     let users = [];
 
     if (fs.existsSync("users.json")) {
-      const data = fs.readFileSync("users.json", "utf-8");
-      users = data ? JSON.parse(data) : [];
+      users = JSON.parse(fs.readFileSync("users.json"));
     }
 
     if (!users.find(u => u.id === user.id)) {
@@ -111,71 +105,26 @@ function saveUser(user) {
   }
 }
 
-// START
+// ===== START =====
 bot.onText(/\/start/, (msg) => {
   saveUser({
     id: msg.from.id,
     name: msg.from.first_name
   });
 
-  bot.sendMessage(msg.chat.id, "Choose category:", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "📱 Mobiles", callback_data: "mobiles" }],
-        [{ text: "🎧 Electronics", callback_data: "electronics" }]
-      ]
-    }
-  });
+  bot.sendMessage(msg.chat.id, "Welcome! Use /post or wait for deals 🚀");
 });
 
-// ===== AUTO FETCH (OPTIONAL) =====
-bot.on("callback_query", async (query) => {
-  bot.answerCallbackQuery(query.id);
-
-  const chatId = query.message.chat.id;
-
-  try {
-    const products = await getAmazonDeals();
-
-    if (!products.length) {
-      return bot.sendMessage(chatId, "No deals found 😔");
-    }
-
-    products.forEach((p) => {
-      productStore[p.id] = p.link;
-
-      const trackLink = `${process.env.BASE_URL}/track/${p.id}?user=${query.from.id}`;
-
-      bot.sendPhoto(chatId, p.image, {
-        caption: `🔥 ${p.name}\n💰 ${p.price}`,
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "Buy Now 🛒", url: trackLink }]
-          ]
-        }
-      });
-    });
-
-  } catch (err) {
-    console.error("Bot Error:", err);
-    bot.sendMessage(chatId, "Error loading deals 😔");
-  }
-});
-
-// ===== MANUAL POST (MAIN FEATURE) =====
-
+// ===== /POST =====
 bot.onText(/\/post (.+)/, (msg, match) => {
   if (msg.from.id !== ADMIN_ID) {
     return bot.sendMessage(msg.chat.id, "❌ Not authorized");
   }
 
-  const chatId = msg.chat.id;
-
-  // Format: name | price | image | link
   const input = match[1].split("|");
 
   if (input.length < 4) {
-    return bot.sendMessage(chatId,
+    return bot.sendMessage(msg.chat.id,
       "❗ Format:\n/post name | price | image | link"
     );
   }
@@ -185,7 +134,7 @@ bot.onText(/\/post (.+)/, (msg, match) => {
   const image = input[2].trim();
   const link = input[3].trim();
 
-  bot.sendPhoto(chatId, image, {
+  bot.sendPhoto(msg.chat.id, image, {
     caption: `🔥 ${name}\n💰 ${price}`,
     reply_markup: {
       inline_keyboard: [
@@ -193,4 +142,73 @@ bot.onText(/\/post (.+)/, (msg, match) => {
       ]
     }
   });
+});
+
+// ===== /BROADCAST =====
+bot.onText(/\/broadcast (.+)/, async (msg, match) => {
+  if (msg.from.id !== ADMIN_ID) {
+    return bot.sendMessage(msg.chat.id, "❌ Not authorized");
+  }
+
+  const input = match[1].split("|");
+
+  if (input.length < 4) {
+    return bot.sendMessage(msg.chat.id,
+      "❗ Format:\n/broadcast name | price | image | link"
+    );
+  }
+
+  const name = input[0].trim();
+  const price = input[1].trim();
+  const image = input[2].trim();
+  const link = input[3].trim();
+
+  let users = [];
+
+  if (fs.existsSync("users.json")) {
+    users = JSON.parse(fs.readFileSync("users.json"));
+  }
+
+  let success = 0;
+  let failed = 0;
+
+  for (let user of users) {
+    try {
+      await bot.sendPhoto(user.id, image, {
+        caption: `🔥 ${name}\n💰 ${price}`,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Buy Now 🛒", url: link }]
+          ]
+        }
+      });
+
+      // delay to avoid Telegram limits
+      await new Promise(r => setTimeout(r, 120));
+
+      success++;
+
+    } catch (err) {
+      failed++;
+    }
+  }
+
+  bot.sendMessage(msg.chat.id,
+    `📢 Broadcast Done\n✅ Success: ${success}\n❌ Failed: ${failed}`
+  );
+});
+
+// ===== /USERS =====
+bot.onText(/\/users/, (msg) => {
+  if (msg.from.id !== ADMIN_ID) {
+    return bot.sendMessage(msg.chat.id, "❌ Not authorized");
+  }
+
+  let users = [];
+
+  if (fs.existsSync("users.json")) {
+    users = JSON.parse(fs.readFileSync("users.json"));
+  }
+
+  bot.sendMessage(msg.chat.id, `👥 Total Users: ${users.length}`);
 });
