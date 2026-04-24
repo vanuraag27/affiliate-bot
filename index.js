@@ -40,22 +40,30 @@ app.get("/track/:id", (req, res) => {
 
 // API stats
 app.get("/api/stats", (req, res) => {
-  let clicks = [];
-  let users = [];
+  try {
+    let clicks = [];
+    let users = [];
 
-  if (fs.existsSync("clicks.json")) {
-    clicks = JSON.parse(fs.readFileSync("clicks.json"));
+    if (fs.existsSync("clicks.json")) {
+      const data = fs.readFileSync("clicks.json", "utf-8");
+      clicks = data ? JSON.parse(data) : [];
+    }
+
+    if (fs.existsSync("users.json")) {
+      const data = fs.readFileSync("users.json", "utf-8");
+      users = data ? JSON.parse(data) : [];
+    }
+
+    res.json({
+      totalClicks: clicks.length,
+      totalUsers: users.length,
+      earnings: clicks.length * 5
+    });
+
+  } catch (error) {
+    console.error("Stats Error:", error);
+    res.status(500).json({ error: "Something went wrong" });
   }
-
-  if (fs.existsSync("users.json")) {
-    users = JSON.parse(fs.readFileSync("users.json"));
-  }
-
-  res.json({
-    totalClicks: clicks.length,
-    totalUsers: users.length,
-    earnings: clicks.length * 5
-  });
 });
 
 app.listen(3000, () => console.log("Server running on port 3000"));
