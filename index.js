@@ -8,7 +8,7 @@ const { getAmazonDeals } = require("./amazonService");
 const app = express();
 
 // ===== CONFIG =====
-const ADMIN_ID = 8217802982; // 🔴 replace with your Telegram ID
+const ADMIN_ID = 1783057190; // 🔴 replace with your Telegram ID
 
 // ===== TEMP STORE =====
 let productStore = {};
