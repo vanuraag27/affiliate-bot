@@ -1,33 +1,24 @@
 require("dotenv").config();
 const express = require("express");
-const fs = require("fs");
-const products = require("./products");
+const { saveClick } = require("./db");
 
 const app = express();
 
-// Track Click
+// DYNAMIC PRODUCT LINKS
+const productLinks = {
+  101: "https://amzn.to/demo1",
+  102: "https://amzn.to/demo2"
+};
+
 app.get("/track/:id", (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = req.params.id;
 
-  const product = products.find(p => p.id === id);
-
-  if (!product) return res.send("Invalid product");
-
-  // Save click
-  let clicks = [];
-  if (fs.existsSync("clicks.json")) {
-    clicks = JSON.parse(fs.readFileSync("clicks.json"));
-  }
-
-  clicks.push({
+  saveClick({
     productId: id,
     time: new Date()
   });
 
-  fs.writeFileSync("clicks.json", JSON.stringify(clicks, null, 2));
-
-  // Redirect to affiliate link
-  res.redirect(product.link);
+  res.redirect(productLinks[id]);
 });
 
 app.listen(3000, () => console.log("Server running"));
