@@ -7,12 +7,15 @@ const { getAmazonDeals } = require("./amazonService");
 
 const app = express();
 
-// ===== TEMP PRODUCT STORE =====
+// ===== CONFIG =====
+const ADMIN_ID = 8217802982; // 🔴 replace with your Telegram ID
+
+// ===== TEMP STORE =====
 let productStore = {};
 
 // ===== SERVER =====
 
-// Home route
+// Home
 app.get("/", (req, res) => {
   res.send("Affiliate Bot Server Running 🚀");
 });
@@ -38,17 +41,17 @@ app.get("/track/:id", (req, res) => {
 
     fs.writeFileSync("clicks.json", JSON.stringify(clicks, null, 2));
 
-    const productLink = productStore[productId];
+    const link = productStore[productId];
 
-    if (!productLink) {
-      return res.send("Invalid product link");
+    if (!link) {
+      return res.send("Invalid product");
     }
 
-    res.redirect(productLink);
+    res.redirect(link);
 
-  } catch (error) {
-    console.error("Track Error:", error);
-    res.status(500).send("Error tracking click");
+  } catch (err) {
+    console.error("Track Error:", err);
+    res.status(500).send("Tracking failed");
   }
 });
 
@@ -74,13 +77,12 @@ app.get("/api/stats", (req, res) => {
       earnings: clicks.length * 5
     });
 
-  } catch (error) {
-    console.error("Stats Error:", error);
-    res.status(500).json({ error: "Something went wrong" });
+  } catch (err) {
+    console.error("Stats Error:", err);
+    res.status(500).json({ error: "Error fetching stats" });
   }
 });
 
-// Start server
 app.listen(3000, () => {
   console.log("Server running on port 3000");
 });
@@ -103,12 +105,13 @@ function saveUser(user) {
       users.push(user);
       fs.writeFileSync("users.json", JSON.stringify(users, null, 2));
     }
-  } catch (error) {
-    console.error("User Save Error:", error);
+
+  } catch (err) {
+    console.error("User Save Error:", err);
   }
 }
 
-// Start command
+// START
 bot.onText(/\/start/, (msg) => {
   saveUser({
     id: msg.from.id,
@@ -125,7 +128,7 @@ bot.onText(/\/start/, (msg) => {
   });
 });
 
-// Handle category click
+// ===== AUTO FETCH (OPTIONAL) =====
 bot.on("callback_query", async (query) => {
   bot.answerCallbackQuery(query.id);
 
@@ -139,7 +142,6 @@ bot.on("callback_query", async (query) => {
     }
 
     products.forEach((p) => {
-      // Store link for tracking
       productStore[p.id] = p.link;
 
       const trackLink = `${process.env.BASE_URL}/track/${p.id}?user=${query.from.id}`;
@@ -154,8 +156,41 @@ bot.on("callback_query", async (query) => {
       });
     });
 
-  } catch (error) {
-    console.error("Bot Error:", error);
+  } catch (err) {
+    console.error("Bot Error:", err);
     bot.sendMessage(chatId, "Error loading deals 😔");
   }
+});
+
+// ===== MANUAL POST (MAIN FEATURE) =====
+
+bot.onText(/\/post (.+)/, (msg, match) => {
+  if (msg.from.id !== ADMIN_ID) {
+    return bot.sendMessage(msg.chat.id, "❌ Not authorized");
+  }
+
+  const chatId = msg.chat.id;
+
+  // Format: name | price | image | link
+  const input = match[1].split("|");
+
+  if (input.length < 4) {
+    return bot.sendMessage(chatId,
+      "❗ Format:\n/post name | price | image | link"
+    );
+  }
+
+  const name = input[0].trim();
+  const price = input[1].trim();
+  const image = input[2].trim();
+  const link = input[3].trim();
+
+  bot.sendPhoto(chatId, image, {
+    caption: `🔥 ${name}\n💰 ${price}`,
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Buy Now 🛒", url: link }]
+      ]
+    }
+  });
 });
