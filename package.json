@@ -1,4 +1,3 @@
-app.use(express.json());
 {
   "name": "affiliate-bot",
   "version": "1.0.0",
