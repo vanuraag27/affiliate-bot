@@ -8,18 +8,28 @@ const cron = require("node-cron");
 
 const app = express();
 app.use(express.json());
+
 const PORT = process.env.PORT || 3000;
 
 const ADMIN_ID = 1783057190;
 const CHANNEL_ID = -1003968191044;
-const BASE_URL = process.env.BASE_URL || "";
+const BASE_URL = process.env.BASE_URL;
 
-// ================= BOT (SAFE SINGLE INSTANCE) =================
+// ================= BOT (WEBHOOK MODE) =================
 const bot = new TelegramBot(process.env.BOT_TOKEN);
+const WEBHOOK_PATH = `/bot${process.env.BOT_TOKEN}`;
 
-console.log("🤖 Bot started");
+// Set webhook
+bot.setWebHook(`${BASE_URL}${WEBHOOK_PATH}`);
 
-// ================= FILE HELPERS (SAFE) =================
+app.post(WEBHOOK_PATH, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+console.log("🤖 Bot running in WEBHOOK mode");
+
+// ================= FILE HELPERS =================
 function readJSON(file, fallback = []) {
   try {
     if (!fs.existsSync(file)) return fallback;
@@ -61,6 +71,15 @@ bot.onText(/\/start/, (msg) => {
   );
 });
 
+// ================= HOME =================
+app.get("/", (req, res) => {
+  res.send(`
+    <h1>🚀 Affiliate Bot Running</h1>
+    <p>✅ Webhook active</p>
+    <p><a href="/dashboard">📊 Open Dashboard</a></p>
+  `);
+});
+
 // ================= TRACK CLICK =================
 app.get("/track/:id", (req, res) => {
   const productId = req.params.id;
@@ -99,8 +118,6 @@ app.get("/dashboard", (req, res) => {
     <html>
     <body style="font-family:Arial;text-align:center">
       <h1>📊 Affiliate Dashboard</h1>
-      <p>✅ Server is live</p>
-
       <div id="data">Loading...</div>
 
       <script>
@@ -117,7 +134,8 @@ app.get("/dashboard", (req, res) => {
     </html>
   `);
 });
-// ================= AUTO POST (OPTIMIZED) =================
+
+// ================= AUTO POST =================
 async function autoPost() {
   try {
     const users = readJSON(USERS_FILE);
@@ -132,7 +150,7 @@ async function autoPost() {
       `💰 ${product.price}\n` +
       `⚡ Limited Time Deal`;
 
-    // Channel post
+    // CHANNEL
     await bot.sendPhoto(CHANNEL_ID, product.image, {
       caption: text,
       reply_markup: {
@@ -142,7 +160,7 @@ async function autoPost() {
       }
     });
 
-    // Send only to FIRST 50 users (prevents crash)
+    // USERS (limited batch)
     const batch = users.slice(0, 50);
 
     for (const user of batch) {
@@ -150,7 +168,6 @@ async function autoPost() {
         await bot.sendPhoto(user.id, product.image, {
           caption: text
         });
-
         await new Promise(r => setTimeout(r, 120));
       } catch {}
     }
@@ -165,7 +182,7 @@ async function autoPost() {
 cron.schedule("0 10 * * *", autoPost);
 cron.schedule("0 20 * * *", autoPost);
 
-// ================= SERVER =================
+// ================= START SERVER =================
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 });
