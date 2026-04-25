@@ -99,7 +99,10 @@ app.get("/dashboard", (req, res) => {
   res.send(`
     <html>
     <body style="font-family:Arial;text-align:center">
-      <h1>📊 Affiliate Dashboard</h1>
+       <h1>🚀 Affiliate Bot Running</h1>
+    <p>✅ Server is live</p>
+    <p><a href="/dashboard">📊 View Dashboard</a></p>
+  `);
       <div id="data">Loading...</div>
 
       <script>
