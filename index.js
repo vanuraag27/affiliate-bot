@@ -14,9 +14,7 @@ const CHANNEL_ID = -1003968191044;
 const BASE_URL = process.env.BASE_URL || "";
 
 // ================= BOT (SAFE SINGLE INSTANCE) =================
-const bot = new TelegramBot(process.env.BOT_TOKEN, {
-  polling: true
-});
+const bot = new TelegramBot(process.env.BOT_TOKEN);
 
 console.log("🤖 Bot started");
 
