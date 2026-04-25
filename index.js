@@ -11,31 +11,21 @@ const PORT = process.env.PORT || 3000;
 
 const ADMIN_ID = 1783057190;
 const CHANNEL_ID = -1003968191044;
-const BASE_URL = process.env.BASE_URL;
+const BASE_URL = process.env.BASE_URL || "";
 
-// ================= SAFE BOT INIT =================
-// Prevent multiple instances (VERY IMPORTANT for Render)
-if (!global.botInstance) {
-  global.botInstance = new TelegramBot(process.env.BOT_TOKEN, {
-    polling: true
-  });
+// ================= BOT (SAFE SINGLE INSTANCE) =================
+const bot = new TelegramBot(process.env.BOT_TOKEN, {
+  polling: true
+});
 
-  console.log("🤖 Bot started safely (single instance)");
-}
+console.log("🤖 Bot started");
 
-const bot = global.botInstance;
-
-// ================= FILES =================
-const USERS_FILE = "users.json";
-const CLICKS_FILE = "clicks.json";
-const PRODUCTS_FILE = "products.json";
-
-// ================= UTIL =================
+// ================= FILE HELPERS (SAFE) =================
 function readJSON(file, fallback = []) {
   try {
     if (!fs.existsSync(file)) return fallback;
-    return JSON.parse(fs.readFileSync(file));
-  } catch (e) {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
     return fallback;
   }
 }
@@ -44,11 +34,16 @@ function writeJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+// ================= FILES =================
+const USERS_FILE = "users.json";
+const CLICKS_FILE = "clicks.json";
+const PRODUCTS_FILE = "products.json";
+
 // ================= SAVE USER =================
 function saveUser(user) {
-  let users = readJSON(USERS_FILE);
+  const users = readJSON(USERS_FILE);
 
-  if (!users.find(u => u.id === user.id)) {
+  if (!users.some(u => u.id === user.id)) {
     users.push(user);
     writeJSON(USERS_FILE, users);
   }
@@ -61,19 +56,22 @@ bot.onText(/\/start/, (msg) => {
     name: msg.from.first_name
   });
 
-  bot.sendMessage(msg.chat.id, "🔥 Welcome! Daily deals coming soon...");
+  bot.sendMessage(
+    msg.chat.id,
+    "🔥 Welcome! Daily deals coming soon. Stay tuned!"
+  );
 });
 
 // ================= TRACK CLICK =================
 app.get("/track/:id", (req, res) => {
   const productId = req.params.id;
 
-  let clicks = readJSON(CLICKS_FILE);
+  const clicks = readJSON(CLICKS_FILE);
 
   clicks.push({
     productId,
     userId: req.query.user || "unknown",
-    time: new Date()
+    time: new Date().toISOString()
   });
 
   writeJSON(CLICKS_FILE, clicks);
@@ -119,7 +117,7 @@ app.get("/dashboard", (req, res) => {
   `);
 });
 
-// ================= AUTO POST =================
+// ================= AUTO POST (OPTIMIZED) =================
 async function autoPost() {
   try {
     const users = readJSON(USERS_FILE);
@@ -129,9 +127,12 @@ async function autoPost() {
 
     const product = products[Math.floor(Math.random() * products.length)];
 
-    const text = `🔥 ${product.name}\n💰 ${product.price}\n⚡ Limited Time Deal`;
+    const text =
+      `🔥 ${product.name}\n` +
+      `💰 ${product.price}\n` +
+      `⚡ Limited Time Deal`;
 
-    // CHANNEL POST
+    // Channel post
     await bot.sendPhoto(CHANNEL_ID, product.image, {
       caption: text,
       reply_markup: {
@@ -141,15 +142,17 @@ async function autoPost() {
       }
     });
 
-    // USERS POST (safe batch)
-    for (const user of users) {
+    // Send only to FIRST 50 users (prevents crash)
+    const batch = users.slice(0, 50);
+
+    for (const user of batch) {
       try {
         await bot.sendPhoto(user.id, product.image, {
           caption: text
         });
 
-        await new Promise(r => setTimeout(r, 100));
-      } catch (e) {}
+        await new Promise(r => setTimeout(r, 120));
+      } catch {}
     }
 
     console.log("✅ Auto post sent");
