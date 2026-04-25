@@ -19,7 +19,6 @@ const BASE_URL = process.env.BASE_URL;
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 const WEBHOOK_PATH = `/bot${process.env.BOT_TOKEN}`;
 
-// Set webhook
 bot.setWebHook(`${BASE_URL}${WEBHOOK_PATH}`);
 
 app.post(WEBHOOK_PATH, (req, res) => {
@@ -67,15 +66,32 @@ bot.onText(/\/start/, (msg) => {
 
   bot.sendMessage(
     msg.chat.id,
-    "🔥 Welcome to Daily Deals India 💸
+    `🔥 Welcome to Daily Deals India 💸
 
 Get the best Amazon deals daily 🚀
 
 👉 Join our channel:
 https://t.me/dailydealofindia
 
-⚡ Don’t miss today’s hot deals!"
+⚡ Don’t miss today’s hot deals!`
   );
+});
+
+// ================= BROADCAST =================
+bot.onText(/\/broadcast (.+)/, async (msg, match) => {
+  if (msg.from.id !== ADMIN_ID) return;
+
+  const text = match[1];
+  const users = readJSON(USERS_FILE);
+
+  for (const user of users) {
+    try {
+      await bot.sendMessage(user.id, text);
+      await new Promise(r => setTimeout(r, 100));
+    } catch {}
+  }
+
+  bot.sendMessage(msg.chat.id, "✅ Broadcast sent to all users");
 });
 
 // ================= HOME =================
@@ -83,7 +99,7 @@ app.get("/", (req, res) => {
   res.send(`
     <h1>🚀 Affiliate Bot Running</h1>
     <p>✅ Webhook active</p>
-    <p><a href="/dashboard">📊 Open Dashboard</a></p>
+    <a href="/dashboard">📊 Open Dashboard</a>
   `);
 });
 
@@ -152,29 +168,40 @@ async function autoPost() {
 
     const product = products[Math.floor(Math.random() * products.length)];
 
-    const text =
-      `🔥 ${product.name}\n` +
-      `💰 ${product.price}\n` +
-      `⚡ Limited Time Deal`;
+    const trackLink = `${BASE_URL}/track/${product.id}?user=0`;
 
-    // CHANNEL
+    const text =
+      `🔥 ${product.name}\n\n` +
+      `💰 Price: ${product.price}\n` +
+      `⚡ Limited Time Deal\n\n` +
+      `⏳ Hurry! Stock running out`;
+
+    // CHANNEL POST
     await bot.sendPhoto(CHANNEL_ID, product.image, {
       caption: text,
       reply_markup: {
         inline_keyboard: [[
-          { text: "🛒 Buy Now", url: product.link }
+          { text: "🛒 Buy Now", url: trackLink }
         ]]
       }
     });
 
-    // USERS (limited batch)
+    // USERS (LIMITED)
     const batch = users.slice(0, 50);
 
     for (const user of batch) {
       try {
+        const userLink = `${BASE_URL}/track/${product.id}?user=${user.id}`;
+
         await bot.sendPhoto(user.id, product.image, {
-          caption: text
+          caption: text,
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "🛒 Buy Now", url: userLink }
+            ]]
+          }
         });
+
         await new Promise(r => setTimeout(r, 120));
       } catch {}
     }
@@ -189,7 +216,7 @@ async function autoPost() {
 cron.schedule("0 10 * * *", autoPost);
 cron.schedule("0 20 * * *", autoPost);
 
-// ================= START SERVER =================
+// ================= SERVER =================
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 });
