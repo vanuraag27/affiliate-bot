@@ -67,7 +67,14 @@ bot.onText(/\/start/, (msg) => {
 
   bot.sendMessage(
     msg.chat.id,
-    "🔥 Welcome! Daily deals coming soon. Stay tuned!"
+    "🔥 Welcome to Daily Deals India 💸
+
+Get the best Amazon deals daily 🚀
+
+👉 Join our channel:
+https://t.me/dailydealofindia
+
+⚡ Don’t miss today’s hot deals!"
   );
 });
 
