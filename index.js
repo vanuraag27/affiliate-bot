@@ -7,78 +7,87 @@ const TelegramBot = require("node-telegram-bot-api");
 const cron = require("node-cron");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-const ADMIN_ID = 1783057190; // 🔴 replace
-const CHANNEL_ID = -1003968191044; // 🔴 replace
+const ADMIN_ID = 1783057190;
+const CHANNEL_ID = -1003968191044;
 const BASE_URL = process.env.BASE_URL;
 
-// ===== BOT =====
-const bot = new TelegramBot(process.env.BOT_TOKEN, {
-  polling: true
-});
+// ================= SAFE BOT INIT =================
+// Prevent multiple instances (VERY IMPORTANT for Render)
+if (!global.botInstance) {
+  global.botInstance = new TelegramBot(process.env.BOT_TOKEN, {
+    polling: true
+  });
 
-// ===== DATA FILES =====
+  console.log("🤖 Bot started safely (single instance)");
+}
+
+const bot = global.botInstance;
+
+// ================= FILES =================
 const USERS_FILE = "users.json";
 const CLICKS_FILE = "clicks.json";
 const PRODUCTS_FILE = "products.json";
 
-// ===== SAVE USER =====
-function saveUser(user) {
-  let users = [];
-  if (fs.existsSync(USERS_FILE)) {
-    users = JSON.parse(fs.readFileSync(USERS_FILE));
-  }
-
-  if (!users.find(u => u.id === user.id)) {
-    users.push(user);
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+// ================= UTIL =================
+function readJSON(file, fallback = []) {
+  try {
+    if (!fs.existsSync(file)) return fallback;
+    return JSON.parse(fs.readFileSync(file));
+  } catch (e) {
+    return fallback;
   }
 }
 
-// ===== START =====
+function writeJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// ================= SAVE USER =================
+function saveUser(user) {
+  let users = readJSON(USERS_FILE);
+
+  if (!users.find(u => u.id === user.id)) {
+    users.push(user);
+    writeJSON(USERS_FILE, users);
+  }
+}
+
+// ================= START COMMAND =================
 bot.onText(/\/start/, (msg) => {
   saveUser({
     id: msg.from.id,
     name: msg.from.first_name
   });
 
-  bot.sendMessage(msg.chat.id, "🔥 Welcome! Daily deals coming...");
+  bot.sendMessage(msg.chat.id, "🔥 Welcome! Daily deals coming soon...");
 });
 
-// ===== TRACK =====
+// ================= TRACK CLICK =================
 app.get("/track/:id", (req, res) => {
   const productId = req.params.id;
-  const userId = req.query.user;
 
-  let clicks = [];
-  if (fs.existsSync(CLICKS_FILE)) {
-    clicks = JSON.parse(fs.readFileSync(CLICKS_FILE));
-  }
+  let clicks = readJSON(CLICKS_FILE);
 
   clicks.push({
     productId,
-    userId,
+    userId: req.query.user || "unknown",
     time: new Date()
   });
 
-  fs.writeFileSync(CLICKS_FILE, JSON.stringify(clicks, null, 2));
+  writeJSON(CLICKS_FILE, clicks);
 
-  const products = JSON.parse(fs.readFileSync(PRODUCTS_FILE));
+  const products = readJSON(PRODUCTS_FILE);
   const product = products.find(p => p.id == productId);
 
   res.redirect(product ? product.link : "https://amazon.in");
 });
 
-// ===== STATS API =====
+// ================= STATS =================
 app.get("/api/stats", (req, res) => {
-  let clicks = fs.existsSync(CLICKS_FILE)
-    ? JSON.parse(fs.readFileSync(CLICKS_FILE))
-    : [];
-
-  let users = fs.existsSync(USERS_FILE)
-    ? JSON.parse(fs.readFileSync(USERS_FILE))
-    : [];
+  const clicks = readJSON(CLICKS_FILE);
+  const users = readJSON(USERS_FILE);
 
   res.json({
     totalClicks: clicks.length,
@@ -87,7 +96,7 @@ app.get("/api/stats", (req, res) => {
   });
 });
 
-// ===== DASHBOARD UI =====
+// ================= DASHBOARD =================
 app.get("/dashboard", (req, res) => {
   res.send(`
     <html>
@@ -110,77 +119,50 @@ app.get("/dashboard", (req, res) => {
   `);
 });
 
-// ===== SMART CATEGORY =====
-function getTopCategory() {
-  if (!fs.existsSync(CLICKS_FILE)) return null;
-
-  const clicks = JSON.parse(fs.readFileSync(CLICKS_FILE));
-  let count = {};
-
-  clicks.forEach(c => {
-    if (!c.category) return;
-    count[c.category] = (count[c.category] || 0) + 1;
-  });
-
-  const sorted = Object.entries(count).sort((a, b) => b[1] - a[1]);
-  return sorted.length ? sorted[0][0] : null;
-}
-
-// ===== AUTO POST =====
+// ================= AUTO POST =================
 async function autoPost() {
-  let users = fs.existsSync(USERS_FILE)
-    ? JSON.parse(fs.readFileSync(USERS_FILE))
-    : [];
-
-  let products = JSON.parse(fs.readFileSync(PRODUCTS_FILE));
-
-  const topCategory = getTopCategory();
-
-  let filtered = topCategory
-    ? products.filter(p => p.category === topCategory)
-    : products;
-
-  const product = filtered[Math.floor(Math.random() * filtered.length)];
-
-  const productId = Date.now().toString();
-
-  const trackLink = `${BASE_URL}/track/${productId}?user=0`;
-
-  const text = `🔥 ${product.name}\n\n💰 ${product.price}\n\n⚡ Limited Time Deal`;
-
-  // Send to channel
   try {
+    const users = readJSON(USERS_FILE);
+    const products = readJSON(PRODUCTS_FILE);
+
+    if (!products.length) return;
+
+    const product = products[Math.floor(Math.random() * products.length)];
+
+    const text = `🔥 ${product.name}\n💰 ${product.price}\n⚡ Limited Time Deal`;
+
+    // CHANNEL POST
     await bot.sendPhoto(CHANNEL_ID, product.image, {
       caption: text,
       reply_markup: {
-        inline_keyboard: [[{ text: "Buy Now 🛒", url: product.link }]]
+        inline_keyboard: [[
+          { text: "🛒 Buy Now", url: product.link }
+        ]]
       }
     });
-  } catch (err) {}
 
-  // Send to users
-  for (let user of users) {
-    try {
-      await bot.sendPhoto(user.id, product.image, {
-        caption: text,
-        reply_markup: {
-          inline_keyboard: [[{ text: "Buy Now 🛒", url: product.link }]]
-        }
-      });
+    // USERS POST (safe batch)
+    for (const user of users) {
+      try {
+        await bot.sendPhoto(user.id, product.image, {
+          caption: text
+        });
 
-      await new Promise(r => setTimeout(r, 120));
+        await new Promise(r => setTimeout(r, 100));
+      } catch (e) {}
+    }
 
-    } catch (err) {}
+    console.log("✅ Auto post sent");
+  } catch (err) {
+    console.log("Auto post error:", err.message);
   }
-
-  console.log("Auto post sent");
 }
 
-// ===== SCHEDULE =====
+// ================= SCHEDULE =================
 cron.schedule("0 10 * * *", autoPost);
 cron.schedule("0 20 * * *", autoPost);
 
-// ===== START SERVER =====
+// ================= SERVER =================
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 });
