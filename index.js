@@ -7,6 +7,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const cron = require("node-cron");
 
 const app = express();
+app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 const ADMIN_ID = 1783057190;
